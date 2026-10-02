@@ -180,9 +180,18 @@ function renderLearn(){
 }
 function extraHTML(e){
  let h='';
- if(e.etymology) h+=`<div class="section"><h3>词源 · 为什么是这个意思</h3><p>${esc(e.etymology)}</p></div>`;
+ if(e.etymology) h+=`<div class="section"><h3>词源 · 为什么是这个意思</h3><p style="white-space:pre-line">${esc(e.etymology)}</p></div>`;
  else if(e.kind==='core_vocab') h+=`<div class="section"><h3>词源</h3><p class="note">此词的词源解析尚未逐词核验。当前版本不做机械拆分，避免把“看起来像前缀”的字母误当成真实词根。</p></div>`;
- if(e.phrase_hint) h+=`<div class="section"><h3>词组方向感提示</h3><p>${esc(e.phrase_hint)}</p><p class="note">这是帮助理解搭配的语义提示，不等于完整历史词源。</p></div>`;
+
+ if(e.phrase_hint){
+   if(e.kind==='core_vocab'){
+     const collocations=String(e.phrase_hint).split(/[；;]/).map(x=>x.trim()).filter(Boolean);
+     h+=`<div class="section"><h3>常用搭配</h3><p>${collocations.map(esc).join(' · ')}</p></div>`;
+   } else {
+     h+=`<div class="section"><h3>词组方向感提示</h3><p>${esc(e.phrase_hint)}</p><p class="note">这是帮助理解词组结构的语义提示，不等于完整历史词源。</p></div>`;
+   }
+ }
+
  if(e.similar?.length) h+=`<div class="section"><h3>形近词候选</h3><p>${e.similar.map(x=>`<a href="#" onclick="openDetail('${x.id}');return false">${esc(x.term)}</a>`).join(' · ')}</p></div>`;
  if(e.groups?.length) e.groups.forEach(i=>{let g=GROUPS[i]; if(g) h+=`<div class="section"><h3>${g.type}辨析 · ${esc(g.title)}</h3><p>${esc(g.note)}</p></div>`});
  return h;
