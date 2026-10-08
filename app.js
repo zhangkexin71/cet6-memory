@@ -160,8 +160,9 @@ function extraHTML(e){
  return h;
 }
 
-// 搜索负责“找到词”，翻页负责“沿着词库往前/往后看”。不要用搜索结果作为翻页队列。
-let visibleWords = DATA.slice();
+// 搜索和分类只负责“找到词”。上一词/下一词永远按原始 DATA 总词表顺序翻阅。
+// 不以搜索结果、收藏集合、分类筛选来决定上一词/下一词。
+const WORD_INDEX = new Map(DATA.map((entry, index) => [entry.id, index]));
 let matchedWords = DATA.slice();
 let activeId = DATA[0]?.id || null;
 let detailOrigin = 'search';
@@ -172,15 +173,15 @@ function setView(name) {
  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===name));
  if(name==='groups') renderGroups();
 }
-// 翻页范围只取决于当前分类，不被搜索关键词缩成一条。
-function browseItems(){
+// 这是搜索列表的筛选范围，不是翻页范围。
+function searchPool(){
  if(filter==='all')return DATA;
  if(filter==='star')return DATA.filter(e=>!!S.favorites[e.id]);
  return DATA.filter(e=>e.kind===filter);
 }
 function searchItems(){
  const q=(document.getElementById('q')?.value||'').trim().toLowerCase();
- return browseItems().filter(e=>!q||e.term.toLowerCase().includes(q)||e.meaning.toLowerCase().includes(q));
+ return searchPool().filter(e=>!q||e.term.toLowerCase().includes(q)||e.meaning.toLowerCase().includes(q));
 }
 function changeFilter(k){filter=k;renderFilters();runSearch()}
 function renderFilters(){document.getElementById('filters').innerHTML=categories.map(([k,n])=>`<button type="button" class="chip ${k===filter?'active':''}" onclick="changeFilter('${k}')">${n}</button>`).join('')}
@@ -191,7 +192,7 @@ function runSearch(){
  const begin=entry?`<button type="button" class="btn browse-start" onclick="openDetail('${entry.id}','search')">${document.getElementById('q').value.trim()?'查看第一个匹配词':'从第一词开始连续浏览'} <span aria-hidden="true">→</span></button>`:'';
  const list=matchedWords.length?matchedWords.slice(0,180).map(e=>`<button type="button" class="result" onclick="openDetail('${e.id}','search')"><b>${esc(e.term)}</b><span class="resultmeaning">${esc(e.meaning)}</span><small>${esc(e.source)} · #${e.n}${S.favorites[e.id]?' · ★':''}</small></button>`).join(''):'<div class="empty">没有找到符合条件的词条</div>';
  box.innerHTML=begin+list;
- document.getElementById('resultCount').textContent=`搜索结果 ${matchedWords.length} 条 · 点开任意词即可用左右箭头连续翻阅${matchedWords.length>180?' · 下方只展示前 180 条':''}`;
+ document.getElementById('resultCount').textContent=`搜索结果 ${matchedWords.length} 条 · 点开后左右箭头按完整 ${DATA.length} 条总词表顺序翻阅${matchedWords.length>180?' · 下方只展示前 180 条':''}`;
 }
 // 点击搜索或按回车，直接打开最匹配的词，不必多点一次搜索结果。
 function searchAndOpen(){
@@ -199,35 +200,32 @@ function searchAndOpen(){
  if(matchedWords.length)openDetail(matchedWords[0].id,'search');
 }
 function detailButtons(i, mode='top'){
- const len=visibleWords.length;
- return `<nav class="navwords navwords--${mode}" aria-label="上一词和下一词"><button type="button" class="btn arrow" onclick="goWord(-1)" ${len<2?'disabled':''} aria-label="上一词">← 上一词</button><span class="position" aria-live="polite">${i+1} / ${len}</span><button type="button" class="btn arrow" onclick="goWord(1)" ${len<2?'disabled':''} aria-label="下一词">下一词 →</button></nav>`;
+ const len=DATA.length;
+ return `<nav class="navwords navwords--${mode}" aria-label="总词表上一词和下一词"><button type="button" class="btn arrow" onclick="goWord(-1)" ${len<2?'disabled':''} aria-label="总词表上一词">← 上一词</button><span class="position" aria-live="polite">总词表 ${i+1} / ${len}</span><button type="button" class="btn arrow" onclick="goWord(1)" ${len<2?'disabled':''} aria-label="总词表下一词">下一词 →</button></nav>`;
 }
 function openDetail(id, origin){
  const e=BYID[id];if(!e)return;
  if(origin)detailOrigin=origin;
- // 分类内连续翻词；如果分类里只剩这一个词，就退回全词库，确保仍有前后词。
- const pool=detailOrigin==='groups'?DATA:browseItems();
- visibleWords=(pool.length>1&&pool.some(x=>x.id===id))?pool:DATA;
  activeId=id;
- const i=visibleWords.findIndex(x=>x.id===id);
- document.getElementById('detailMount').innerHTML=`<div class="detailtop"><button class="btn back" onclick="setView('${detailOrigin}')">← 返回${detailOrigin==='groups'?'辨析':'查词'}</button><span class="muted">${esc(e.source)} · #${e.n}</span></div><p class="browse-hint">左右箭头沿词库顺序翻词；翻到末尾会接回开头。</p>${detailButtons(i,'top')}<article class="card detail"><div class="source">PDF 第${e.page}页</div><div class="heading"><h2 class="word">${esc(e.term)}</h2><button class="speaker" id="speakerBtn" aria-label="朗读单词">🔊</button></div><div class="meaning">${esc(e.meaning)||'（原词表没有解析到释义）'}</div>${extraHTML(e)}<div class="section"><button class="btn" onclick="toggleStar('${e.id}')">${S.favorites[e.id]?'★ 已收藏 · 点击取消':'☆ 收藏这个词'}</button></div></article>${detailButtons(i,'floating')}`;
+ const i=WORD_INDEX.get(id);
+ document.getElementById('detailMount').innerHTML=`<div class="detailtop"><button class="btn back" onclick="setView('${detailOrigin}')">← 返回${detailOrigin==='groups'?'辨析':'查词'}</button><span class="muted">${esc(e.source)} · #${e.n}</span></div><p class="browse-hint">搜索仅用于定位；左右箭头始终按完整 ${DATA.length} 条总词表的原始顺序翻阅，末尾接回开头。</p>${detailButtons(i,'top')}<article class="card detail"><div class="source">PDF 第${e.page}页</div><div class="heading"><h2 class="word">${esc(e.term)}</h2><button class="speaker" id="speakerBtn" aria-label="朗读单词">🔊</button></div><div class="meaning">${esc(e.meaning)||'（原词表没有解析到释义）'}</div>${extraHTML(e)}<div class="section"><button class="btn" onclick="toggleStar('${e.id}')">${S.favorites[e.id]?'★ 已收藏 · 点击取消':'☆ 收藏这个词'}</button></div></article>${detailButtons(i,'floating')}`;
  document.getElementById('speakerBtn').onclick=()=>speak(e.term);
  setView('detail');window.scrollTo(0,0);
 }
 function goWord(delta){
- const len=visibleWords.length;
+ const len=DATA.length;
  if(len<2)return;
- const i=visibleWords.findIndex(e=>e.id===activeId);
- if(i<0)return;
- // 循环翻阅，首页上一词、末页下一词都可用。
- const next=visibleWords[(i+delta+len)%len];
+ const i=WORD_INDEX.get(activeId);
+ if(i===undefined)return;
+ // 严格按总词表顺序循环翻页，永远不读取 matchedWords 或当前筛选项。
+ const next=DATA[(i+delta+len)%len];
  if(next)openDetail(next.id);
 }
 function toggleStar(id){ S.favorites[id]=!S.favorites[id];save();runSearch();openDetail(id); }
 function renderGroups(){
  document.getElementById('groupsMount').innerHTML=GROUPS.map(g=>`<article class="card group"><h3>${esc(g.type)} · ${esc(g.title)}</h3><div class="words">${g.members.map(termLink).join(' / ')}</div><p>${esc(g.note)}</p></article>`).join('');
 }
-function termLink(w){const e=DATA.find(x=>x.term.toLowerCase()===String(w).toLowerCase());return e?`<a href="#" onclick="visibleWords=DATA.slice();openDetail('${e.id}','groups');return false">${esc(w)}</a>`:esc(w)}
+function termLink(w){const e=DATA.find(x=>x.term.toLowerCase()===String(w).toLowerCase());return e?`<a href="#" onclick="openDetail('${e.id}','groups');return false">${esc(w)}</a>`:esc(w)}
 function mountApp(){
  document.getElementById('accountEmail').textContent=authUser?.email||'';
  renderFilters();runSearch();setView('search');
